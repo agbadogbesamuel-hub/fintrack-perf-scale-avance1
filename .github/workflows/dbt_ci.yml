@@ -1,0 +1,83 @@
+name: dbt CI
+
+on:
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'dbt/**'
+      - '.github/workflows/dbt_ci.yml'
+
+env:
+  DBT_PROFILES_DIR: ./dbt
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_CI_USER: ${{ secrets.SNOWFLAKE_CI_USER }}
+  SNOWFLAKE_CI_PASSWORD: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
+  DBT_CI_PR_ID: ${{ github.event.pull_request.number }}
+
+jobs:
+  lint:
+    name: Lint SQL (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install sqlfluff
+        run: pip install sqlfluff sqlfluff-templater-dbt dbt-snowflake
+      - name: Install dbt deps
+        working-directory: ./dbt
+        run: dbt deps
+      - name: Lint changed files
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'dbt/models/**/*.sql')
+          if [ -n "$FILES" ]; then
+            sqlfluff lint $FILES
+          else
+            echo "No SQL files changed."
+          fi
+
+  build-slim:
+    name: Slim CI (build modified + downstream)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install dbt-snowflake==1.8.*
+
+      - name: Fetch production manifest
+        run: |
+          mkdir -p prod-artifacts
+          # En pratique : télécharger manifest.json depuis S3 / dbt Cloud API
+          # aws s3 cp s3://fintrack-dbt-artifacts/prod/manifest.json prod-artifacts/
+          echo "Placeholder — configurer le download du manifest prod"
+
+      - name: dbt deps
+        working-directory: ./dbt
+        run: dbt deps
+
+      - name: dbt build (state:modified + downstream)
+        working-directory: ./dbt
+        run: |
+          dbt build \
+            --target ci \
+            --select "state:modified+" \
+            --defer --state ../prod-artifacts \
+            --fail-fast
+
+      - name: Cleanup CI schema
+        if: always()
+        working-directory: ./dbt
+        run: |
+          dbt run-operation drop_schema \
+            --target ci \
+            --args "{schema_name: CI_${{ github.event.pull_request.number }}}"

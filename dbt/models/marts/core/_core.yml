@@ -1,0 +1,126 @@
+version: 2
+
+models:
+  # ============================================
+  # DIMENSIONS
+  # ============================================
+  - name: dim_tenants
+    description: "Dimension des banques partenaires B2B2C"
+    access: public
+    group: core
+    columns:
+      - name: tenant_id
+        tests: [unique, not_null]
+      - name: tenant_code
+        tests: [unique, not_null]
+      - name: contract_tier
+        tests:
+          - accepted_values:
+              values: ['gold', 'silver', 'bronze']
+
+  - name: dim_comptes
+    description: "Dimension comptes — état courant"
+    access: public
+    group: core
+    columns:
+      - name: compte_id
+        tests: [unique, not_null]
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_tenants')
+              field: tenant_id
+      - name: statut
+        tests:
+          - accepted_values:
+              values: ['actif', 'inactif', 'cloture', 'suspendu']
+      - name: kyc_level
+        tests:
+          - accepted_values:
+              values: ['basic', 'intermediate', 'advanced', 'not_verified']
+
+  - name: dim_comptes_scd2
+    description: "Dimension comptes historisée (SCD Type 2)"
+    access: public
+    group: core
+
+  - name: dim_categories
+    description: "Dimension catégories avec hiérarchie résolue"
+    access: public
+    group: core
+    columns:
+      - name: categorie_id
+        tests: [unique, not_null]
+
+  - name: bridge_comptes_titulaires
+    description: "Bridge table pour les comptes joints (many-to-many)"
+    access: private
+    group: core
+
+  # ============================================
+  # FAITS
+  # ============================================
+  - name: fct_transactions
+    description: |
+      Table de faits principale — 50-100M lignes.
+      Enrichie avec FX à date, catégorisation, compliance.
+    access: public
+    group: core
+    # Contract dbt : les consommateurs externes dépendent de ce schéma
+    config:
+      contract:
+        enforced: false  # Activer une fois la structure stabilisée
+    columns:
+      - name: transaction_id
+        description: "Identifiant unique de la transaction"
+        tests: [unique, not_null]
+        data_type: number
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_tenants')
+              field: tenant_id
+        data_type: number
+      - name: compte_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_comptes')
+              field: compte_id
+        data_type: number
+      - name: montant_eur
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100000000
+              severity: warn
+        data_type: number
+      - name: statut
+        tests:
+          - accepted_values:
+              values: ['validee', 'en_attente']
+        data_type: varchar
+      - name: date_transaction
+        tests: [not_null]
+        data_type: timestamp_ntz
+
+  - name: fct_virements
+    description: "Faits virements — double-écriture sortant/entrant"
+    access: public
+    group: core
+    columns:
+      - name: virement_id
+        tests: [not_null]
+      - name: virement_leg
+        tests:
+          - accepted_values:
+              values: ['sortant', 'entrant']
+
+groups:
+  - name: core
+    owner:
+      name: Data Platform Team
+      email: data-platform@fintrack.example

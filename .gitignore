@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+
+# Data
+data/raw/*.csv
+data/raw/*.csv.gz
+data/processed/
+
+# Secrets
+profiles.yml
+.env
+*.pem
+*.p8
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# CI artifacts
+prod-artifacts/
+manifest.json.bak

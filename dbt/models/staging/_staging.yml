@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: stg_tenants
+    description: "Tenants (banques partenaires) nettoyés"
+    columns:
+      - name: tenant_id
+        tests: [unique, not_null]
+
+  - name: stg_categories
+    description: "Référentiel catégories — actives uniquement"
+    columns:
+      - name: categorie_id
+        tests: [unique, not_null]
+
+  - name: stg_fx_rates
+    description: "Taux FX quotidiens"
+    columns:
+      - name: fx_id
+        tests: [unique, not_null]
+
+  - name: stg_comptes
+    description: "Comptes clients avec typage et normalisation"
+    columns:
+      - name: compte_id
+        tests: [unique, not_null]
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_tenants')
+              field: tenant_id
+
+  - name: stg_transactions
+    description: "Transactions typées, incremental merge"
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+
+  - name: stg_virements
+    description: "Virements internes typés, incremental merge"
+    columns:
+      - name: virement_id
+        tests: [unique, not_null]

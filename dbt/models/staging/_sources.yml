@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: fintrack_raw
+    database: FINTRACK_PROD
+    schema: RAW
+    description: "Données brutes chargées depuis le core banking system"
+
+    # Freshness SLA — configurez selon les tenants de production
+    freshness:
+      warn_after:  {count: 6,  period: hour}
+      error_after: {count: 24, period: hour}
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: raw_tenants
+        description: "Banques partenaires de la plateforme B2B2C"
+
+      - name: raw_categories
+        description: "Référentiel des catégories de transactions (hiérarchique)"
+
+      - name: raw_fx_rates
+        description: "Taux de change quotidiens historisés — base EUR"
+        columns:
+          - name: fx_id
+            tests: [unique, not_null]
+          - name: date_cotation
+            tests: [not_null]
+
+      - name: raw_comptes
+        description: "Comptes clients avec KYC/AML et données PII"
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after:  {count: 12, period: hour}
+          error_after: {count: 48, period: hour}
+        columns:
+          - name: compte_id
+            tests: [unique, not_null]
+
+      - name: raw_transactions
+        description: "Table de faits large — 80 colonnes, jusqu'à 100M lignes"
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after:  {count: 2, period: hour}
+          error_after: {count: 6, period: hour}
+        columns:
+          - name: transaction_id
+            tests: [unique, not_null]
+          - name: tenant_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('fintrack_raw', 'raw_tenants')
+                  field: tenant_id
+
+      - name: raw_virements
+        description: "Virements internes entre comptes"
+        loaded_at_field: _loaded_at
+        columns:
+          - name: virement_id
+            tests: [unique, not_null]

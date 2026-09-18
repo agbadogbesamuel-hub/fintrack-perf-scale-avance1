@@ -1,0 +1,91 @@
+name: 'fintrack_perf_scale'
+version: '3.0.0'
+config-version: 2
+
+profile: 'fintrack_perf_scale'
+
+model-paths:     ["models"]
+analysis-paths:  ["analyses"]
+test-paths:      ["tests"]
+seed-paths:      ["seeds"]
+macro-paths:     ["macros"]
+snapshot-paths:  ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+require-dbt-version: [">=1.8.0", "<2.0.0"]
+
+# ============================================
+# Query tag on every run
+# ============================================
+on-run-start:
+  - "{{ set_query_tag() }}"
+
+on-run-end:
+  - "{{ unset_query_tag() }}"
+
+# ============================================
+# Modèles
+# ============================================
+models:
+  fintrack_perf_scale:
+    +persist_docs:
+      relation: true
+      columns: true
+
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ['staging']
+      # Transactions et virements overridés en incremental dans leurs configs
+
+    intermediate:
+      +materialized: ephemeral
+      +tags: ['intermediate']
+
+    marts:
+      +materialized: table
+      +tags: ['marts']
+      core:
+        +schema: marts_core
+      finance:
+        +schema: marts_finance
+      analytics:
+        +schema: marts_analytics
+
+# ============================================
+# Snapshots
+# ============================================
+snapshots:
+  fintrack_perf_scale:
+    +target_schema: snapshots
+
+# ============================================
+# Seeds
+# ============================================
+seeds:
+  fintrack_perf_scale:
+    +schema: raw
+
+# ============================================
+# Tests
+# ============================================
+tests:
+  +store_failures: true
+  +schema: audit_test_failures
+
+# ============================================
+# Variables
+# ============================================
+vars:
+  # Fenêtre de lookback pour les modèles incrémentaux
+  incremental_lookback_days: 7
+
+  # Filtres de développement (accélère les runs en dev)
+  dev_start_date: '2024-01-01'
+  dev_end_date:   '2024-12-31'
+
+  # dbt-utils
+  'dbt_date:time_zone': 'Europe/Paris'
