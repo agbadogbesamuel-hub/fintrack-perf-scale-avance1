@@ -81,6 +81,10 @@ jobs:
         run: pip install "dbt-snowflake>=1.9,<2.0"
 
       - name: Fetch production manifest
+        # Non bloquant : tant que dbt_prod_deploy.yml n'existe pas sur main
+        # (tout premier PR) l'API répond 404 — if_no_artifact_found ne couvre
+        # pas ce cas. Sans manifest, le build retombe sur un build complet.
+        continue-on-error: true
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: dbt_prod_deploy.yml
