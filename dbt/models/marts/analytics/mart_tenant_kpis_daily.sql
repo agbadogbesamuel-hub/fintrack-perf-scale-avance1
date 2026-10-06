@@ -25,8 +25,9 @@ agg as (
         count(distinct compte_id) as nb_comptes_actifs,
         count(distinct case when statut = 'validee' then transaction_id end) as nb_transactions_validees,
         count(distinct case when statut = 'rejetee' then transaction_id end) as nb_transactions_rejetees,
-        sum(case when type_operation = 'credit' and statut = 'validee' then montant_eur else 0 end) as volume_credit_eur,
-        sum(case when type_operation = 'debit'  and statut = 'validee' then montant_eur else 0 end) as volume_debit_eur,
+        sum(case when type_operation = 'credit' and statut = 'validee' then montant_eur else 0 end)
+            as volume_credit_eur,
+        sum(case when type_operation = 'debit' and statut = 'validee' then montant_eur else 0 end) as volume_debit_eur,
         sum(case when statut = 'validee' then frais else 0 end) as revenus_frais_eur,
 
         -- Compliance
@@ -63,5 +64,5 @@ select
     a.fraud_score_moyen,
     a.fraud_score_max
 
-from agg a
-left join tenants t on a.tenant_id = t.tenant_id
+from agg as a
+left join tenants as t on a.tenant_id = t.tenant_id

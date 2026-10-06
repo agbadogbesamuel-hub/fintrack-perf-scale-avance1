@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: mart_cohortes_retention
+    description: "Rétention M+0 à M+12 par cohorte de mois d'ouverture de compte"
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['cohort_mois', 'mois_offset']
+    columns:
+      - name: cohort_mois
+        tests: [not_null]
+      - name: mois_offset
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 12
+      - name: taux_retention_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+
+  - name: mart_transactions_anomalies
+    description: "Z-score du montant de chaque transaction validée vs moyenne mobile (90 tx précédentes) du compte"
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: is_anomalie
+        tests: [not_null]
+      - name: severite
+        tests:
+          - accepted_values:
+              values: ['low', 'medium', 'high']

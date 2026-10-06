@@ -4,8 +4,13 @@
 -- Agrège transactions + virements pour produire le solde de chaque
 -- compte à chaque date, y compris les jours sans mouvement.
 --
--- TODO (Sprint 4) : Optimiser ce modèle en incremental si le volume
--- pousse trop. Actuellement en table pour simplicité.
+-- Grain : une ligne par (compte_id, jour). Le tenant est celui du compte
+-- (dim_comptes), pas celui porté par chaque transaction : grouper aussi par
+-- le tenant de la transaction créait des doublons (compte, jour) et rendait
+-- le solde cumulé non déterministe (égalités dans l'ORDER BY de la fenêtre).
+--
+-- Décision Sprint 4 : reste en table — 2,4 s au scale M (cf. PERF_LOG).
+-- À passer en incremental si le volume le justifie (scale L/XL).
 -- ============================================================
 
 {{
@@ -18,36 +23,34 @@
 
 with tx as (
     select
-        tenant_id,
         compte_id,
         jour_transaction as jour,
         sum(montant_signe_eur) as solde_tx_eur
     from {{ ref('fct_transactions') }}
     where statut = 'validee'
-    group by tenant_id, compte_id, jour_transaction
+    group by compte_id, jour_transaction
 ),
 
 vir as (
     select
-        tenant_id,
         compte_id,
         date_virement::date as jour,
         sum(case when virement_leg = 'sortant' then -montant else montant end) as solde_vir_eur
     from {{ ref('fct_virements') }}
-    group by tenant_id, compte_id, date_virement::date
+    group by compte_id, date_virement::date
 ),
 
 flux_jour as (
     select
-        coalesce(tx.tenant_id, vir.tenant_id) as tenant_id,
         coalesce(tx.compte_id, vir.compte_id) as compte_id,
         coalesce(tx.jour, vir.jour) as jour,
-        coalesce(tx.solde_tx_eur, 0)  as flux_transactions,
+        coalesce(tx.solde_tx_eur, 0) as flux_transactions,
         coalesce(vir.solde_vir_eur, 0) as flux_virements
     from tx
     full outer join vir
-        on tx.compte_id = vir.compte_id
-       and tx.jour = vir.jour
+        on
+            tx.compte_id = vir.compte_id
+            and tx.jour = vir.jour
 ),
 
 comptes as (
@@ -60,7 +63,7 @@ comptes as (
 )
 
 select
-    f.tenant_id,
+    c.tenant_id,
     f.compte_id,
     f.jour,
     f.flux_transactions,
@@ -73,5 +76,5 @@ select
         rows between unbounded preceding and current row
     ) as solde_cumule_eur
 
-from flux_jour f
-join comptes c on f.compte_id = c.compte_id
+from flux_jour as f
+inner join comptes as c on f.compte_id = c.compte_id

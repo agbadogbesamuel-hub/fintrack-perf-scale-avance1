@@ -1,34 +1,30 @@
 -- ============================================================
 -- BRIDGE COMPTES ↔ TITULAIRES (relation many-to-many)
 -- ============================================================
--- TODO (Sprint 5) : Créer une table bridge pour gérer les comptes joints
--- (un compte peut avoir plusieurs titulaires, un titulaire peut avoir
--- plusieurs comptes).
+-- Un compte peut avoir plusieurs titulaires (comptes joints,
+-- type_compte='joint' côté générateur) ; un titulaire peut être
+-- rattaché à plusieurs comptes.
 --
--- Le générateur n'expose pas encore les co-titulaires — vous devrez :
---   1. Enrichir le générateur Python pour créer une table raw_titulaires
---      et raw_compte_titulaires
---   2. Ajouter les DDL dans script 02
---   3. Créer les modèles staging correspondants
---   4. Implémenter cette bridge avec :
---      - allocation_factor (poids) pour ventilation des montants
---      - date_debut, date_fin (historisation des changements)
+-- allocation_factor : poids de ventilation des montants du compte
+--   entre ses titulaires (0.5/0.5 pour un compte joint à 2, 1.0 pour
+--   un compte à titulaire unique).
+-- date_debut / date_fin : historisation du rattachement compte <->
+--   titulaire (date_fin NULL = rattachement toujours actif).
 -- ============================================================
 
 {{
     config(
         materialized='table',
-        tags=['marts', 'core', 'bridge', 'todo']
+        tags=['marts', 'core', 'bridge']
     )
 }}
 
--- Placeholder — un compte, un titulaire, factor = 1
 select
     compte_id,
-    compte_id as titulaire_id,
-    1.0 as allocation_factor,
-    date_ouverture as date_debut,
-    cast(null as date) as date_fin,
-    true as is_primary
+    titulaire_id,
+    allocation_factor,
+    date_debut,
+    date_fin,
+    is_primary
 
-from {{ ref('stg_comptes') }}
+from {{ ref('stg_compte_titulaires') }}

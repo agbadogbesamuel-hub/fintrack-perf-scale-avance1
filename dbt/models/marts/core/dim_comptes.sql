@@ -56,11 +56,11 @@ select
     datediff('day', c.date_ouverture, current_date()) as anciennete_jours,
     datediff('day', c.date_derniere_activite, current_date()) as jours_depuis_activite,
     case
-        when datediff('day', c.date_derniere_activite, current_date()) <= 30  then 'très_actif'
-        when datediff('day', c.date_derniere_activite, current_date()) <= 90  then 'actif'
+        when datediff('day', c.date_derniere_activite, current_date()) <= 30 then 'très_actif'
+        when datediff('day', c.date_derniere_activite, current_date()) <= 90 then 'actif'
         when datediff('day', c.date_derniere_activite, current_date()) <= 365 then 'dormant'
         else 'inactif'
     end as segment_activite
 
-from comptes c
-left join tenants t on c.tenant_id = t.tenant_id
+from comptes as c
+left join tenants as t on c.tenant_id = t.tenant_id

@@ -1,46 +1,46 @@
 -- ============================================================
--- FCT TRANSACTIONS — table de faits principale
+-- FCT TRANSACTIONS — prototype microbatch (dbt 1.9+, expérimental)
 -- ============================================================
--- Volume cible : 50-100M lignes.
--- Stratégie : incremental merge sur transaction_id,
--- clustering (tenant_id, mois), colonnes essentielles seulement.
+-- US 3.2 : évaluer incremental_strategy='microbatch' en remplacement
+-- du merge classique de fct_transactions.sql. Même logique métier,
+-- seule la stratégie d'incrémentalité change.
 --
--- Décisions Sprint 3 / 6 (détail : docs/PERF_LOG.md, docs/CONTRACTS.md) :
---   1. Microbatch prototypé (fct_transactions_microbatch) → merge conservé
---   2. Search Optimization testée → aucun gain au scale M, non activée
---   3. Contrat enforced + versioning : ce fichier = v1, cf. fct_transactions_v2
+-- Le microbatch découpe l'exécution en une requête par fenêtre
+-- event_time (ici 1 jour), avec un lookback de 3 jours pour capturer
+-- les mises à jour tardives (ex: passage en_attente -> validee).
+--
+-- dbt (1.9+) injecte automatiquement le filtre de fenêtre temporelle
+-- dans le ref() du modèle amont configuré avec event_time (voir
+-- int_transactions_normalisees.sql) — pas besoin de filtrer
+-- manuellement ici, même si ce ref est ephemeral.
+--
+-- Désactivé par défaut : sur une base vide, dbt rejouerait chaque jour
+-- depuis `begin` (~1 400 batches, ~2h30) dans chaque build standard.
+-- Pour le relancer sur une fenêtre bornée :
+--   dbt run --select fct_transactions_microbatch --     --vars '{enable_microbatch_prototype: true}' --     --event-time-start 2024-06-01 --event-time-end 2024-06-08
 -- ============================================================
 
 {{
     config(
+        enabled=var('enable_microbatch_prototype', false),
         materialized='incremental',
+        incremental_strategy='microbatch',
         unique_key='transaction_id',
-        incremental_strategy='merge',
+        event_time='date_transaction',
+        batch_size='day',
+        lookback=3,
+        begin='2023-01-01',
         merge_update_columns=['statut', 'is_reconciled', 'aml_flag',
                               'aml_score', 'fraud_score', 'montant_eur',
                               'updated_at'],
         cluster_by=['tenant_id', "date_trunc('month', date_transaction)"],
         on_schema_change='append_new_columns',
-        tags=['marts', 'core', 'fct', 'incremental', 'critical'],
-        pre_hook=[
-            "{{ log_incremental_run('fct_transactions', 'pre') }}"
-        ],
-        post_hook=[
-            "{{ log_incremental_run('fct_transactions', 'post') }}"
-        ]
+        tags=['marts', 'core', 'fct', 'incremental', 'experimental', 'microbatch']
     )
 }}
 
 with base as (
     select * from {{ ref('int_transactions_normalisees') }}
-
-    {% if is_incremental() %}
-    where
-        _loaded_at >= (
-            select dateadd('day', -{{ var('incremental_lookback_days') }}, max(this_tbl._loaded_at))
-            from {{ this }} as this_tbl
-        )
-    {% endif %}
 ),
 
 fx as (
@@ -70,11 +70,7 @@ select
     -- Montants
     b.montant,
     b.devise,
-    -- Recalcul FX depuis notre référentiel (source de vérité).
-    -- Le référentiel est coté EUR -> devise (1 EUR = taux devise, ex. 173 JPY) :
-    -- pour convertir un montant en devise vers l'EUR, on DIVISE par le taux.
-    -- Repli sur le taux appliqué par la source (convention inverse :
-    -- montant * taux = EUR) uniquement si le référentiel n'a pas de cotation.
+    -- Référentiel coté EUR -> devise : on divise (cf. fct_transactions.sql)
     round(coalesce(
         b.montant / nullif(fx.taux, 0),
         b.montant * b.taux_change_applique,
@@ -122,11 +118,9 @@ select
     b.updated_at,
     b._loaded_at
 
-from base as b
+from base b
 left join fx
-    on
-        b.jour_transaction = fx.date_cotation
-        and b.devise = fx.devise
-where
-    b.statut in ('validee', 'en_attente')
-    and b.is_reversal = false
+    on b.jour_transaction = fx.date_cotation
+   and b.devise = fx.devise
+where b.statut in ('validee', 'en_attente')
+  and b.is_reversal = false

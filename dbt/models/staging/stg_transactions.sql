@@ -26,8 +26,12 @@
 with source as (
     select * from {{ source('fintrack_raw', 'raw_transactions') }}
     {% if is_incremental() %}
-        -- Fenêtre glissante de 7 jours pour capturer les mises à jour de statut
-        where _loaded_at >= (select dateadd('day', -7, max(_loaded_at)) from {{ this }})
+    -- Fenêtre glissante (var incremental_lookback_days, 7j par défaut) pour capturer les mises à jour de statut
+    where
+        _loaded_at >= (
+            select dateadd('day', -{{ var('incremental_lookback_days') }}, max(this_tbl._loaded_at))
+            from {{ this }} as this_tbl
+        )
     {% endif %}
 ),
 
@@ -41,12 +45,12 @@ typage as (
         compte_dest_iban,
 
         -- Timestamps
-        date_transaction::timestamp_ntz  as date_transaction,
-        date_valeur::timestamp_ntz       as date_valeur,
+        date_transaction::timestamp_ntz as date_transaction,
+        date_valeur::timestamp_ntz as date_valeur,
         date_comptabilisation::timestamp_ntz as date_comptabilisation,
-        date_reception::timestamp_ntz    as date_reception,
-        date_traitement::timestamp_ntz   as date_traitement,
-        date_settlement::timestamp_ntz   as date_settlement,
+        date_reception::timestamp_ntz as date_reception,
+        date_traitement::timestamp_ntz as date_traitement,
+        date_settlement::timestamp_ntz as date_settlement,
 
         -- Montants
         montant,
@@ -62,12 +66,12 @@ typage as (
 
         case
             when lower(type_operation) = 'credit' then montant
-            when lower(type_operation) = 'debit'  then -montant
+            when lower(type_operation) = 'debit' then -montant
         end as montant_signe,
 
         case
             when lower(type_operation) = 'credit' then montant_eur
-            when lower(type_operation) = 'debit'  then -montant_eur
+            when lower(type_operation) = 'debit' then -montant_eur
         end as montant_signe_eur,
 
         -- Catégorisation

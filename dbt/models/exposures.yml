@@ -1,0 +1,37 @@
+version: 2
+
+# Consommateurs connus des modèles publics. Sert à :
+#   - savoir qui prévenir avant de casser / déprécier une version
+#   - voir l'impact aval dans le lineage (dbt docs)
+exposures:
+  - name: dashboard_executif_tenants
+    label: Dashboard exécutif par tenant
+    type: dashboard
+    maturity: high
+    owner:
+      name: Data Platform Team
+      email: data-platform@fintrack.example
+    depends_on:
+      - ref('mart_tenant_kpis_daily')
+      - ref('fct_transactions', v=1)
+
+  - name: reverse_etl_crm
+    label: Sync Hightouch vers le CRM
+    type: application
+    maturity: medium
+    owner:
+      name: Data Platform Team
+      email: data-platform@fintrack.example
+    depends_on:
+      - ref('dim_comptes')
+      - ref('fct_transactions', v=1)
+
+  - name: data_science_anomalies
+    label: Modèles Data Science (fraude / anomalies)
+    type: ml
+    maturity: low
+    owner:
+      name: Data Science
+      email: data-science@fintrack.example
+    depends_on:
+      - ref('mart_transactions_anomalies')

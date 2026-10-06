@@ -1,0 +1,55 @@
+name: dbt Prod Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dbt/**'
+      - '.github/workflows/dbt_prod_deploy.yml'
+
+env:
+  DBT_PROFILES_DIR: ./dbt
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_PROD_USER: ${{ secrets.SNOWFLAKE_PROD_USER }}
+  SNOWFLAKE_PRIVATE_KEY_PATH: ${{ github.workspace }}/snowflake_prod_key.p8
+  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+
+jobs:
+  deploy:
+    name: Build prod + publish manifest artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install "dbt-snowflake>=1.9,<2.0"
+
+      - name: Write Snowflake key-pair private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > "$SNOWFLAKE_PRIVATE_KEY_PATH"
+
+      - name: dbt deps
+        working-directory: ./dbt
+        run: dbt deps
+
+      - name: dbt build (prod)
+        working-directory: ./dbt
+        run: dbt build --target prod
+
+      # Publie le manifest.json de ce build comme artifact GitHub Actions.
+      # dbt_ci.yml (déclenché sur les PR) télécharge le dernier artifact
+      # "prod-manifest" produit ici pour faire du Slim CI (--defer --state),
+      # sans dépendance à un stockage externe (S3, dbt Cloud, ...) qui
+      # n'existe pas encore pour ce projet. prod-artifacts/ reste
+      # volontairement hors du repo (.gitignore) : l'état prod n'est
+      # jamais commité, seulement publié en artifact CI éphémère.
+      - name: Upload manifest artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-manifest
+          path: dbt/target/manifest.json
+          retention-days: 30

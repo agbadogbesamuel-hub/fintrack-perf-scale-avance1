@@ -4,13 +4,14 @@
 -- Ce modèle est éphémère pour éviter la matérialisation d'une table
 -- gigantesque intermédiaire. dbt l'injecte comme CTE dans les modèles aval.
 --
--- TODO (Sprint 3) : Si les perfs de fct_transactions dégradent trop,
--- envisagez de le passer en incremental (table) plutôt qu'ephemeral.
+-- Décision Sprint 3 : reste ephemeral (fct_transactions = 15 s au scale M).
+-- event_time='date_transaction' requis par fct_transactions_microbatch.
 -- ============================================================
 
 {{
     config(
         materialized='ephemeral',
+        event_time='date_transaction',
         tags=['intermediate', 'transactions']
     )
 }}
@@ -53,9 +54,9 @@ select
     cat.type_categorie,
     cat.groupe,
     date_trunc('month', tx.date_transaction)::date as mois_transaction,
-    date_trunc('week',  tx.date_transaction)::date as semaine_transaction,
-    date_trunc('day',   tx.date_transaction)::date as jour_transaction
+    date_trunc('week', tx.date_transaction)::date as semaine_transaction,
+    date_trunc('day', tx.date_transaction)::date as jour_transaction
 
 from tx
-left join comptes c on tx.compte_id = c.compte_id
-left join categories cat on tx.categorie_id = cat.categorie_id
+left join comptes as c on tx.compte_id = c.compte_id
+left join categories as cat on tx.categorie_id = cat.categorie_id

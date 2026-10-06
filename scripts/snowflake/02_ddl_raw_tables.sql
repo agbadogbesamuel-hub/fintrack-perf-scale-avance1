@@ -203,6 +203,33 @@ CREATE OR REPLACE TABLE raw_transactions (
 CLUSTER BY (tenant_id, DATE_TRUNC('MONTH', date_transaction));
 
 -- ============================================
+-- TITULAIRES (personnes physiques, bridge comptes <-> titulaires)
+-- ============================================
+CREATE OR REPLACE TABLE raw_titulaires (
+    titulaire_id            INTEGER,
+    nom                     VARCHAR(100),
+    prenom                  VARCHAR(100),
+    email                   VARCHAR(200),
+    telephone               VARCHAR(30),
+    date_naissance          DATE,
+    _loaded_at              TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- ============================================
+-- BRIDGE COMPTES <-> TITULAIRES (many-to-many, comptes joints)
+-- ============================================
+CREATE OR REPLACE TABLE raw_compte_titulaires (
+    compte_id               INTEGER,
+    titulaire_id            INTEGER,
+    allocation_factor       NUMBER(5, 4),
+    date_debut              DATE,
+    date_fin                DATE,
+    is_primary              BOOLEAN,
+    _loaded_at              TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+)
+CLUSTER BY (compte_id);
+
+-- ============================================
 -- VIREMENTS INTERNES
 -- ============================================
 CREATE OR REPLACE TABLE raw_virements (

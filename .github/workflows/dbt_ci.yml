@@ -25,6 +25,27 @@ jobs:
           python-version: '3.11'
       - name: Install sqlfluff
         run: pip install sqlfluff sqlfluff-templater-dbt dbt-snowflake
+      - name: Write CI profiles.yml
+        # profiles.yml est gitignoré (secrets) : on le génère ici, les valeurs
+        # sensibles restent dans les secrets GitHub via env_var().
+        run: |
+          cat > dbt/profiles.yml <<'YAML'
+          fintrack_perf_scale:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_CI_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_CI_PASSWORD') }}"
+                role: FINTRACK_DEV_ROLE
+                warehouse: WH_DEV
+                database: FINTRACK_DEV
+                schema: "CI_{{ env_var('DBT_CI_PR_ID', 'unknown') }}"
+                threads: 8
+                query_tag: 'target=ci'
+          YAML
+
       - name: Install dbt deps
         working-directory: ./dbt
         run: dbt deps
@@ -52,14 +73,41 @@ jobs:
           python-version: '3.11'
 
       - name: Install dbt
-        run: pip install dbt-snowflake==1.8.*
+        run: pip install "dbt-snowflake>=1.9,<2.0"
 
       - name: Fetch production manifest
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: dbt_prod_deploy.yml
+          branch: main
+          name: prod-manifest
+          path: prod-artifacts
+          # Si aucun run de dbt_prod_deploy.yml n'a encore réussi sur main
+          # (ex: tout premier PR du projet), on continue sans manifest —
+          # dbt_build_flags plus bas retombe alors sur un build complet
+          # (pas de --defer possible sans état de référence).
+          if_no_artifact_found: warn
+
+      - name: Write CI profiles.yml
+        # profiles.yml est gitignoré (secrets) : on le génère ici, les valeurs
+        # sensibles restent dans les secrets GitHub via env_var().
         run: |
-          mkdir -p prod-artifacts
-          # En pratique : télécharger manifest.json depuis S3 / dbt Cloud API
-          # aws s3 cp s3://fintrack-dbt-artifacts/prod/manifest.json prod-artifacts/
-          echo "Placeholder — configurer le download du manifest prod"
+          cat > dbt/profiles.yml <<'YAML'
+          fintrack_perf_scale:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_CI_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_CI_PASSWORD') }}"
+                role: FINTRACK_DEV_ROLE
+                warehouse: WH_DEV
+                database: FINTRACK_DEV
+                schema: "CI_{{ env_var('DBT_CI_PR_ID', 'unknown') }}"
+                threads: 8
+                query_tag: 'target=ci'
+          YAML
 
       - name: dbt deps
         working-directory: ./dbt
@@ -68,11 +116,17 @@ jobs:
       - name: dbt build (state:modified + downstream)
         working-directory: ./dbt
         run: |
-          dbt build \
-            --target ci \
-            --select "state:modified+" \
-            --defer --state ../prod-artifacts \
-            --fail-fast
+          if [ -f ../prod-artifacts/manifest.json ]; then
+            echo "Manifest prod trouvé — build Slim CI (state:modified+ seulement)"
+            dbt build \
+              --target ci \
+              --select "state:modified+" \
+              --defer --state ../prod-artifacts \
+              --fail-fast
+          else
+            echo "Aucun manifest prod disponible (premier run ?) — build complet"
+            dbt build --target ci --fail-fast
+          fi
 
       - name: Cleanup CI schema
         if: always()

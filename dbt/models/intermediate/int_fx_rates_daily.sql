@@ -32,8 +32,8 @@ grille_complete as (
     select
         ds.date_day::date as date_cotation,
         d.devise_cible
-    from date_spine ds
-    cross join devises d
+    from date_spine as ds
+    cross join devises as d
 ),
 
 joint as (
@@ -47,10 +47,11 @@ joint as (
             order by gc.date_cotation
             rows between unbounded preceding and current row
         ) as taux_ffill
-    from grille_complete gc
-    left join source s
-        on gc.date_cotation = s.date_cotation
-       and gc.devise_cible = s.devise_cible
+    from grille_complete as gc
+    left join source as s
+        on
+            gc.date_cotation = s.date_cotation
+            and gc.devise_cible = s.devise_cible
 )
 
 select
@@ -65,7 +66,7 @@ union all
 
 -- Taux 1:1 pour EUR → EUR
 select
-    date_cotation,
+    date_day::date as date_cotation,
     'EUR' as devise_source,
     'EUR' as devise_cible,
     1.0 as taux

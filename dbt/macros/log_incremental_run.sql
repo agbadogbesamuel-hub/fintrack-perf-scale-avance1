@@ -1,12 +1,12 @@
 {% macro log_incremental_run(model_name, phase) %}
     {#-
-        Journalise les runs incrémentaux dans FINTRACK_PROD.AUDIT.dbt_run_log.
+        Journalise les runs incrémentaux dans <database_cible>.AUDIT.dbt_run_log
+        (le schéma AUDIT doit exister dans chaque database cible — voir
+        scripts/snowflake/05_audit_tables.sql).
 
         Usage dans un modèle :
             pre_hook = "{{ log_incremental_run('fct_transactions', 'pre') }}"
             post_hook = "{{ log_incremental_run('fct_transactions', 'post') }}"
-
-        La table doit être créée au préalable — voir scripts/snowflake/05_audit_tables.sql
     -#}
 
     {% if execute %}
@@ -26,8 +26,6 @@
             )
         {% endset %}
         {{ log("Logging " ~ phase ~ " hook for " ~ model_name, info=True) }}
-        -- Décommenter une fois la table audit créée :
-        -- {{ return(query) }}
-        {{ return("select 1 as noop") }}
+        {{ return(query) }}
     {% endif %}
 {% endmacro %}
