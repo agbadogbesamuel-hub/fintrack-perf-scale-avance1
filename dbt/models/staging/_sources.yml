@@ -59,3 +59,17 @@ sources:
         columns:
           - name: virement_id
             tests: [unique, not_null]
+
+      - name: raw_titulaires
+        description: "Personnes physiques titulaires de comptes (co-titulaires inclus)"
+        columns:
+          - name: titulaire_id
+            tests: [unique, not_null]
+
+      - name: raw_compte_titulaires
+        description: "Bridge many-to-many comptes <-> titulaires (comptes joints)"
+        columns:
+          - name: compte_id
+            tests: [not_null]
+          - name: titulaire_id
+            tests: [not_null]

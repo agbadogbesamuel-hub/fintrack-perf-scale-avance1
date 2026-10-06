@@ -160,18 +160,51 @@ def generate_tenants(n: int, output_dir: Path) -> list:
 
 
 def generate_categories(output_dir: Path) -> None:
+    """
+    Construit une hiérarchie sur 2-3 niveaux à partir des catégories "feuilles"
+    de CATEGORIES : un noeud racine par groupe (ex. "Loisirs"), et une
+    sous-catégorie de démonstration à 3 niveaux (Loisirs > Restaurant > Fast-food)
+    pour matcher l'exemple du briefing. Les categorie_id existants (1-30, déjà
+    référencés par raw_transactions) ne sont jamais réassignés.
+    """
     path = output_dir / "raw_categories.csv.gz"
+
+    next_id = max(cid for cid, *_ in CATEGORIES) + 1
+
+    groupes = []
+    seen_groupes = set()
+    for _, _, _, groupe in CATEGORIES:
+        if groupe not in seen_groupes:
+            seen_groupes.add(groupe)
+            groupes.append(groupe)
+
+    root_id_by_groupe = {}
+    rows = []
+    for groupe in groupes:
+        root_id = next_id
+        next_id += 1
+        root_id_by_groupe[groupe] = root_id
+        rows.append([root_id, groupe, "groupe", groupe, None, 1, True, "2023-01-01"])
+
+    for (cid, nom, type_c, groupe) in CATEGORIES:
+        parent = root_id_by_groupe[groupe]
+        rows.append([cid, nom, type_c, groupe, parent, 2, True, "2023-01-01"])
+
+    # Exemple 3 niveaux explicite (cf. briefing) : Loisirs > Restaurant > Fast-food
+    restaurant_id = next(cid for cid, nom, *_ in CATEGORIES if nom == "Restaurant")
+    fast_food_id = next_id
+    next_id += 1
+    rows.append([fast_food_id, "Fast-food", "depense", "Loisirs", restaurant_id, 3,
+                 True, "2023-01-01"])
+
     with gzip.open(path, "wt", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["categorie_id", "nom_categorie", "type_categorie",
                     "groupe", "categorie_parent_id", "niveau_hierarchique",
                     "is_active", "date_creation"])
-        for (cid, nom, type_c, groupe) in CATEGORIES:
-            parent = None
-            niveau = 1
-            w.writerow([cid, nom, type_c, groupe, parent, niveau, True,
-                        "2023-01-01"])
-    print(f"  ✓ {path.name} ({len(CATEGORIES)} catégories)")
+        for row in rows:
+            w.writerow(row)
+    print(f"  ✓ {path.name} ({len(rows)} catégories, hiérarchie sur 3 niveaux)")
 
 
 def generate_fx_rates(output_dir: Path, start_date: datetime, end_date: datetime) -> None:
@@ -204,9 +237,17 @@ def generate_fx_rates(output_dir: Path, start_date: datetime, end_date: datetime
     print(f"  ✓ {path.name} ({rows:,} lignes)")
 
 
-def generate_comptes(n: int, tenant_ids: list, output_dir: Path, fake: Faker) -> list:
-    """Comptes clients — schéma large avec KYC, adresse, préférences."""
+def generate_comptes(n: int, tenant_ids: list, output_dir: Path, fake: Faker) -> tuple:
+    """Comptes clients — schéma large avec KYC, adresse, préférences.
+
+    Retourne (compte_ids, comptes_meta) où comptes_meta est la liste
+    (compte_id, type_compte, nom_client, prenom_client, date_ouverture)
+    nécessaire à generate_titulaires_and_bridge pour savoir quels comptes
+    sont joints (type_compte == 'joint') et reprendre la même identité
+    que celle déjà affichée sur le compte.
+    """
     path = output_dir / "raw_comptes.csv.gz"
+    comptes_meta = []
     with gzip.open(path, "wt", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow([
@@ -228,14 +269,20 @@ def generate_comptes(n: int, tenant_ids: list, output_dir: Path, fake: Faker) ->
                 ["actif", "inactif", "cloture", "suspendu"],
                 weights=[0.82, 0.10, 0.06, 0.02]
             )[0]
+            nom_client = fake.last_name()
+            prenom_client = fake.first_name()
+            type_compte = random.choices(
+                ["courant", "epargne", "joint", "pro", "jeune"],
+                weights=[0.55, 0.25, 0.10, 0.07, 0.03]
+            )[0]
+            comptes_meta.append((cid, type_compte, nom_client, prenom_client, open_date))
             w.writerow([
                 cid, tenant, fake.bban(), fake.iban(), fake.swift(),
-                fake.last_name(), fake.first_name(), fake.email(),
+                nom_client, prenom_client, fake.email(),
                 fake.phone_number(), fake.date_of_birth(minimum_age=18, maximum_age=85).isoformat(),
                 fake.street_address(), fake.secondary_address() if random.random() < 0.3 else "",
                 fake.postcode(), fake.city(), fake.country_code(),
-                random.choices(["courant", "epargne", "joint", "pro", "jeune"],
-                              weights=[0.55, 0.25, 0.10, 0.07, 0.03])[0],
+                type_compte,
                 random.choices(DEVISES, weights=[0.55, 0.15, 0.10, 0.05, 0.03, 0.03, 0.03, 0.02, 0.02, 0.02])[0],
                 round(random.uniform(0, 15000), 2),
                 round(random.uniform(-500, 50000), 2),
@@ -260,7 +307,73 @@ def generate_comptes(n: int, tenant_ids: list, output_dir: Path, fake: Faker) ->
             if cid % 100_000 == 0:
                 print(f"    ... {cid:,} comptes générés")
     print(f"  ✓ {path.name} ({n:,} comptes)")
-    return list(range(1, n + 1))
+    return list(range(1, n + 1)), comptes_meta
+
+
+def generate_titulaires_and_bridge(comptes_meta: list, output_dir: Path, fake: Faker) -> None:
+    """
+    Titulaires (personnes physiques) et bridge many-to-many comptes <-> titulaires.
+
+    Un compte 'joint' (cf. type_compte) reçoit 2 titulaires à parts égales
+    (allocation_factor 0.5 chacun) ; les autres comptes n'ont qu'un seul
+    titulaire (allocation_factor 1.0). Le titulaire principal reprend le
+    nom/prénom déjà affichés sur le compte pour rester cohérent avec
+    raw_comptes. date_debut = date d'ouverture du compte ; date_fin reste
+    vide (aucun changement de titulaire simulé — la bridge supporte
+    l'historisation mais le générateur ne produit que l'état courant).
+    """
+    titulaires_path = output_dir / "raw_titulaires.csv.gz"
+    bridge_path = output_dir / "raw_compte_titulaires.csv.gz"
+
+    titulaire_rows = []
+    bridge_rows = []
+    next_titulaire_id = 1
+    n_joints = 0
+
+    for (compte_id, type_compte, nom_client, prenom_client, date_ouverture) in comptes_meta:
+        is_joint = type_compte == "joint"
+        if is_joint:
+            n_joints += 1
+
+        primary_id = next_titulaire_id
+        next_titulaire_id += 1
+        titulaire_rows.append([
+            primary_id, nom_client, prenom_client, fake.email(),
+            fake.phone_number(),
+            fake.date_of_birth(minimum_age=18, maximum_age=85).isoformat(),
+        ])
+        bridge_rows.append([
+            compte_id, primary_id, 0.5 if is_joint else 1.0,
+            date_ouverture.isoformat(), "", True,
+        ])
+
+        if is_joint:
+            co_titulaire_id = next_titulaire_id
+            next_titulaire_id += 1
+            titulaire_rows.append([
+                co_titulaire_id, fake.last_name(), fake.first_name(), fake.email(),
+                fake.phone_number(),
+                fake.date_of_birth(minimum_age=18, maximum_age=85).isoformat(),
+            ])
+            bridge_rows.append([
+                compte_id, co_titulaire_id, 0.5,
+                date_ouverture.isoformat(), "", False,
+            ])
+
+    with gzip.open(titulaires_path, "wt", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["titulaire_id", "nom", "prenom", "email", "telephone", "date_naissance"])
+        for row in titulaire_rows:
+            w.writerow(row)
+    print(f"  ✓ {titulaires_path.name} ({len(titulaire_rows):,} titulaires)")
+
+    with gzip.open(bridge_path, "wt", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["compte_id", "titulaire_id", "allocation_factor",
+                    "date_debut", "date_fin", "is_primary"])
+        for row in bridge_rows:
+            w.writerow(row)
+    print(f"  ✓ {bridge_path.name} ({len(bridge_rows):,} lignes, {n_joints:,} comptes joints)")
 
 
 def generate_transactions(n: int, compte_ids: list, tenant_ids: list,
@@ -517,27 +630,30 @@ def main() -> None:
 
     start = datetime.now()
 
-    print("\n[1/6] Tenants ...")
+    print("\n[1/7] Tenants ...")
     tenant_ids = generate_tenants(preset["n_tenants"], output_dir)
 
-    print("\n[2/6] Catégories ...")
+    print("\n[2/7] Catégories ...")
     generate_categories(output_dir)
 
-    print("\n[3/6] Taux FX (730 jours) ...")
+    print("\n[3/7] Taux FX (730 jours) ...")
     generate_fx_rates(output_dir,
                       datetime(2023, 1, 1),
                       datetime(2024, 12, 31))
 
-    print("\n[4/6] Comptes ...")
-    compte_ids = generate_comptes(preset["n_comptes"], tenant_ids, output_dir, fake)
+    print("\n[4/7] Comptes ...")
+    compte_ids, comptes_meta = generate_comptes(preset["n_comptes"], tenant_ids, output_dir, fake)
 
-    print("\n[5/6] Transactions ...")
+    print("\n[5/7] Transactions ...")
     generate_transactions(preset["n_transactions"], compte_ids, tenant_ids,
                           output_dir, fake)
 
-    print("\n[6/6] Virements ...")
+    print("\n[6/7] Virements ...")
     generate_virements(preset["n_comptes"] // 10, compte_ids, tenant_ids,
                        output_dir, fake)
+
+    print("\n[7/7] Titulaires et bridge comptes-titulaires ...")
+    generate_titulaires_and_bridge(comptes_meta, output_dir, fake)
 
     duration = datetime.now() - start
     print("\n" + "=" * 60)

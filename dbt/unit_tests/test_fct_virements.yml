@@ -1,0 +1,37 @@
+unit_tests:
+  - name: test_fct_virements_double_ecriture
+    description: >
+      Un virement exécuté doit produire exactement 2 lignes dans le fait :
+      une leg "sortant" (montant_signe négatif, contrepartie = compte_dest_id)
+      et une leg "entrant" (montant_signe positif, contrepartie = compte_source_id).
+    model: fct_virements
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_virements')
+        rows:
+          - {virement_id: 1, tenant_id: 1, compte_source_id: 100, compte_dest_id: 200,
+             montant: 500.00, devise: 'EUR', date_virement: '2024-01-01 10:00:00',
+             statut: 'execute', _loaded_at: '2024-01-01 10:00:00'}
+    expect:
+      rows:
+        - {virement_id: 1, compte_id: 100, contrepartie_compte_id: 200,
+           virement_leg: 'sortant', montant_signe: -500.00}
+        - {virement_id: 1, compte_id: 200, contrepartie_compte_id: 100,
+           virement_leg: 'entrant', montant_signe: 500.00}
+
+  - name: test_fct_virements_exclut_non_executes
+    description: "Un virement dont le statut n'est pas 'execute' (ex: en_attente) ne doit produire aucune ligne."
+    model: fct_virements
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_virements')
+        rows:
+          - {virement_id: 2, tenant_id: 1, compte_source_id: 100, compte_dest_id: 200,
+             montant: 300.00, devise: 'EUR', date_virement: '2024-01-01 11:00:00',
+             statut: 'en_attente', _loaded_at: '2024-01-01 11:00:00'}
+    expect:
+      rows: []

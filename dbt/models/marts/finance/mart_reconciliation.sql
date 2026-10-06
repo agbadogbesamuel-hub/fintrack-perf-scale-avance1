@@ -46,11 +46,10 @@ select
     first_tx,
     last_tx,
     datediff('day', last_tx, current_timestamp()) as jours_depuis_dernier_tx,
-    case
-        when datediff('day', last_tx, current_timestamp()) > 3
-         and nb_non_rapprochees > 0
-        then true
-        else false
-    end as alerte_reconciliation
+    coalesce(
+        datediff('day', last_tx, current_timestamp()) > 3
+        and nb_non_rapprochees > 0,
+        false
+    ) as alerte_reconciliation
 
 from tx

@@ -11,7 +11,11 @@
 with source as (
     select * from {{ source('fintrack_raw', 'raw_virements') }}
     {% if is_incremental() %}
-        where _loaded_at >= (select dateadd('day', -3, max(_loaded_at)) from {{ this }})
+    where
+        _loaded_at >= (
+            select dateadd('day', -3, max(this_tbl._loaded_at))
+            from {{ this }} as this_tbl
+        )
     {% endif %}
 )
 

@@ -44,6 +44,11 @@ models:
     description: "Dimension comptes historisée (SCD Type 2)"
     access: public
     group: core
+    columns:
+      - name: compte_sk
+        tests: [unique, not_null]
+      - name: compte_id
+        tests: [not_null]
 
   - name: dim_categories
     description: "Dimension catégories avec hiérarchie résolue"
@@ -57,6 +62,17 @@ models:
     description: "Bridge table pour les comptes joints (many-to-many)"
     access: private
     group: core
+    columns:
+      - name: compte_id
+        tests: [not_null]
+      - name: titulaire_id
+        tests: [not_null]
+      - name: allocation_factor
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
 
   # ============================================
   # FAITS
@@ -65,47 +81,154 @@ models:
     description: |
       Table de faits principale — 50-100M lignes.
       Enrichie avec FX à date, catégorisation, compliance.
+      Modèle public sous contrat : le schéma (noms + types) est vérifié à
+      chaque build, dbt refuse de construire si la sortie SQL diverge.
     access: public
     group: core
-    # Contract dbt : les consommateurs externes dépendent de ce schéma
+    latest_version: 1
     config:
       contract:
-        enforced: false  # Activer une fois la structure stabilisée
+        enforced: true
+    # Types numériques avec précision explicite : sous contrat, dbt crée la
+    # table avec ces types — un "number" nu deviendrait NUMBER(38,0) et
+    # arrondirait les montants à l'euro.
     columns:
+      # Clés
       - name: transaction_id
         description: "Identifiant unique de la transaction"
+        data_type: number(38,0)
+        constraints:
+          - type: not_null
         tests: [unique, not_null]
-        data_type: number
+      - name: external_transaction_id
+        data_type: varchar
       - name: tenant_id
+        data_type: number(38,0)
         tests:
           - not_null
           - relationships:
               to: ref('dim_tenants')
               field: tenant_id
-        data_type: number
       - name: compte_id
+        data_type: number(38,0)
         tests:
           - not_null
           - relationships:
               to: ref('dim_comptes')
               field: compte_id
-        data_type: number
+      - name: categorie_id
+        data_type: number(38,0)
+      # Temporalité
+      - name: date_transaction
+        data_type: timestamp_ntz
+        tests: [not_null]
+      - name: jour_transaction
+        data_type: date
+      - name: semaine_transaction
+        data_type: date
+      - name: mois_transaction
+        data_type: date
+      - name: date_valeur
+        data_type: timestamp_ntz
+      - name: date_settlement
+        data_type: timestamp_ntz
+      # Montants
+      - name: montant
+        data_type: number(38,2)
+      - name: devise
+        data_type: varchar
       - name: montant_eur
+        description: "Montant converti au taux du jour du référentiel int_fx_rates_daily"
+        data_type: number(38,2)
         tests:
           - not_null
           - dbt_utils.accepted_range:
               min_value: 0
               max_value: 100000000
               severity: warn
-        data_type: number
+      - name: montant_signe
+        data_type: number(38,2)
+      - name: montant_signe_eur
+        data_type: number(38,2)
+      - name: frais
+        data_type: number(38,2)
+      - name: montant_net
+        data_type: number(38,2)
+      # Type et statut
+      - name: type_operation
+        data_type: varchar
+      - name: sens
+        data_type: varchar
       - name: statut
+        data_type: varchar
         tests:
           - accepted_values:
               values: ['validee', 'en_attente']
+      - name: moyen_paiement
         data_type: varchar
-      - name: date_transaction
-        tests: [not_null]
+      - name: canal
+        data_type: varchar
+      # Enrichissements
+      - name: type_compte
+        data_type: varchar
+      - name: customer_segment
+        data_type: varchar
+      - name: pays_compte
+        data_type: varchar
+      - name: nom_categorie
+        data_type: varchar
+      - name: type_categorie
+        data_type: varchar
+      - name: groupe
+        data_type: varchar
+      # Marchand
+      - name: marchand_nom
+        data_type: varchar
+      - name: marchand_categorie
+        data_type: varchar
+      - name: marchand_pays
+        data_type: varchar
+      - name: marchand_mcc
+        data_type: number(38,0)
+      # Compliance
+      - name: aml_score
+        data_type: number(6,2)
+      - name: aml_flag
+        data_type: varchar
+      - name: fraud_score
+        data_type: number(6,2)
+      - name: is_flagged_for_review
+        data_type: boolean
+      # Rapprochement
+      - name: is_reconciled
+        data_type: boolean
+      - name: reconciliation_batch_id
+        data_type: varchar
+      # Metadata
+      - name: source_system
+        data_type: varchar
+      - name: created_at
         data_type: timestamp_ntz
+      - name: updated_at
+        data_type: timestamp_ntz
+      - name: _loaded_at
+        data_type: timestamp_ntz
+    versions:
+      - v: 1
+        # Garde le fichier et le nom de table existants (pas de rupture
+        # pour les dashboards ni pour l'historique incrémental)
+        defined_in: fct_transactions
+        config:
+          alias: fct_transactions
+        deprecation_date: 2027-03-31
+      - v: 2
+        # Ajout non cassant ; deviendra latest_version après migration
+        # des consommateurs (cf. docs/CONTRACTS.md)
+        columns:
+          - include: all
+          - name: montant_hors_taxes
+            description: "montant_eur hors TVA (taux var('taux_tva_defaut'), hypothèse 20%)"
+            data_type: number(38,2)
 
   - name: fct_virements
     description: "Faits virements — double-écriture sortant/entrant"

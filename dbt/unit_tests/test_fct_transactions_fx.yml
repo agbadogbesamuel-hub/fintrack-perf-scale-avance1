@@ -1,0 +1,52 @@
+unit_tests:
+  - name: test_fct_transactions_conversion_fx
+    description: >
+      Le référentiel FX est coté EUR -> devise (1 EUR = 160 JPY). Un montant en
+      devise doit donc être DIVISÉ par le taux pour obtenir l'EUR :
+      16 000 JPY -> 100,00 EUR ; 110 USD à 1,10 -> 100,00 EUR ; EUR inchangé.
+      Sans cotation dans le référentiel, repli sur taux_change_applique (montant * taux).
+    model: fct_transactions
+    versions:
+      include: [1]
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('int_transactions_normalisees')
+        format: sql
+        rows: |
+          {% set cols %}
+            null::varchar as external_transaction_id, 1 as tenant_id, 1 as compte_id, 1 as categorie_id,
+            '2024-03-15 10:00:00'::timestamp_ntz as date_transaction, '2024-03-15'::date as jour_transaction,
+            '2024-03-11'::date as semaine_transaction, '2024-03-01'::date as mois_transaction,
+            null::timestamp_ntz as date_valeur, null::timestamp_ntz as date_settlement,
+            null::number(15,2) as montant_signe, null::number(15,2) as montant_signe_eur,
+            0::number(10,2) as frais, null::number(15,2) as montant_net,
+            'debit' as type_operation, 'sortant' as sens, 'validee' as statut,
+            null::varchar as moyen_paiement, null::varchar as canal, null::varchar as type_compte,
+            null::varchar as customer_segment, null::varchar as pays_compte, null::varchar as nom_categorie,
+            null::varchar as type_categorie, null::varchar as groupe, null::varchar as marchand_nom,
+            null::varchar as marchand_categorie, null::varchar as marchand_pays, null::integer as marchand_mcc,
+            null::number(6,2) as aml_score, null::varchar as aml_flag, null::number(6,2) as fraud_score,
+            false as is_flagged_for_review, false as is_reconciled, null::varchar as reconciliation_batch_id,
+            null::varchar as source_system, null::timestamp_ntz as created_at, null::timestamp_ntz as updated_at,
+            null::timestamp_ntz as _loaded_at, false as is_reversal
+          {% endset %}
+          select 1 as transaction_id, 16000.00::number(15,2) as montant, 'JPY' as devise, 1.0::number(18,8) as taux_change_applique, {{ cols }}
+          union all
+          select 2, 110.00, 'USD', 1.0, {{ cols }}
+          union all
+          select 3, 100.00, 'EUR', 1.0, {{ cols }}
+          union all
+          select 4, 100.00, 'XXX', 0.5, {{ cols }}
+      - input: ref('int_fx_rates_daily')
+        rows:
+          - {date_cotation: '2024-03-15', devise_cible: JPY, taux: 160.0}
+          - {date_cotation: '2024-03-15', devise_cible: USD, taux: 1.10}
+          - {date_cotation: '2024-03-15', devise_cible: EUR, taux: 1.0}
+    expect:
+      rows:
+        - {transaction_id: 1, montant_eur: 100.00}
+        - {transaction_id: 2, montant_eur: 100.00}
+        - {transaction_id: 3, montant_eur: 100.00}
+        - {transaction_id: 4, montant_eur: 50.00}

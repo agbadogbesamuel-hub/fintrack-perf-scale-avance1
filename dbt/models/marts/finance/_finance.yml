@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: mart_solde_journalier
+    description: "Solde cumulé par compte et par jour (transactions validées + virements)"
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['compte_id', 'jour']
+    columns:
+      - name: compte_id
+        tests: [not_null]
+      - name: tenant_id
+        description: "Tenant du compte (dim_comptes)"
+        tests: [not_null]

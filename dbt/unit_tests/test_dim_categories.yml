@@ -1,0 +1,38 @@
+unit_tests:
+  - name: test_dim_categories_racine_sans_parent
+    description: "Une catégorie sans parent est sa propre racine : niveau 1, chemin_complet = nom_categorie, id_racine = son propre id"
+    model: dim_categories
+    given:
+      - input: ref('stg_categories')
+        rows:
+          - {categorie_id: 1, nom_categorie: 'Loisirs', type_categorie: 'groupe',
+             groupe: 'Loisirs', categorie_parent_id: null, niveau_hierarchique: 1,
+             is_active: true, date_creation: '2023-01-01'}
+    expect:
+      rows:
+        - {categorie_id: 1, nom_categorie: 'Loisirs', niveau_hierarchique: 1,
+           chemin_complet: 'Loisirs', id_racine: 1}
+
+  - name: test_dim_categories_hierarchie_3_niveaux
+    description: >
+      Hiérarchie à 3 niveaux (Loisirs > Restaurant > Fast-food, cf. exemple du
+      briefing) : chemin_complet doit se construire niveau par niveau et
+      id_racine doit toujours pointer vers le noeud racine, pas vers le parent direct.
+    model: dim_categories
+    given:
+      - input: ref('stg_categories')
+        rows:
+          - {categorie_id: 1, nom_categorie: 'Loisirs', type_categorie: 'groupe',
+             groupe: 'Loisirs', categorie_parent_id: null, niveau_hierarchique: 1,
+             is_active: true, date_creation: '2023-01-01'}
+          - {categorie_id: 2, nom_categorie: 'Restaurant', type_categorie: 'depense',
+             groupe: 'Loisirs', categorie_parent_id: 1, niveau_hierarchique: 1,
+             is_active: true, date_creation: '2023-01-01'}
+          - {categorie_id: 3, nom_categorie: 'Fast-food', type_categorie: 'depense',
+             groupe: 'Loisirs', categorie_parent_id: 2, niveau_hierarchique: 1,
+             is_active: true, date_creation: '2023-01-01'}
+    expect:
+      rows:
+        - {categorie_id: 1, chemin_complet: 'Loisirs', niveau_hierarchique: 1, id_racine: 1}
+        - {categorie_id: 2, chemin_complet: 'Loisirs > Restaurant', niveau_hierarchique: 2, id_racine: 1}
+        - {categorie_id: 3, chemin_complet: 'Loisirs > Restaurant > Fast-food', niveau_hierarchique: 3, id_racine: 1}

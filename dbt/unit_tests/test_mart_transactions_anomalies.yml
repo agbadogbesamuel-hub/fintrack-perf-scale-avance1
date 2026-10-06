@@ -1,0 +1,37 @@
+unit_tests:
+  - name: test_anomalie_montant_extreme_detectee
+    description: >
+      Un compte avec 11 transactions "normales" (90/110 €) puis une de 10 000 € :
+      seule la dernière doit être anormale (sévérité high). Les 10 premières n'ont
+      pas assez d'historique (< 10 tx) pour être scorées. La tx en_attente est exclue.
+    model: mart_transactions_anomalies
+    given:
+      - input: ref('fct_transactions')
+        rows:
+          - {transaction_id: 1,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-01 10:00:00', montant_eur: 90}
+          - {transaction_id: 2,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-02 10:00:00', montant_eur: 110}
+          - {transaction_id: 3,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-03 10:00:00', montant_eur: 90}
+          - {transaction_id: 4,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-04 10:00:00', montant_eur: 110}
+          - {transaction_id: 5,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-05 10:00:00', montant_eur: 90}
+          - {transaction_id: 6,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-06 10:00:00', montant_eur: 110}
+          - {transaction_id: 7,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-07 10:00:00', montant_eur: 90}
+          - {transaction_id: 8,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-08 10:00:00', montant_eur: 110}
+          - {transaction_id: 9,  tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-09 10:00:00', montant_eur: 90}
+          - {transaction_id: 10, tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-10 10:00:00', montant_eur: 110}
+          - {transaction_id: 11, tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-11 10:00:00', montant_eur: 90}
+          - {transaction_id: 12, tenant_id: 1, compte_id: 1, statut: validee,    date_transaction: '2024-01-12 10:00:00', montant_eur: 10000}
+          - {transaction_id: 13, tenant_id: 1, compte_id: 1, statut: en_attente, date_transaction: '2024-01-13 10:00:00', montant_eur: 50000}
+    expect:
+      rows:
+        - {transaction_id: 1,  is_anomalie: false, severite: null}
+        - {transaction_id: 2,  is_anomalie: false, severite: null}
+        - {transaction_id: 3,  is_anomalie: false, severite: null}
+        - {transaction_id: 4,  is_anomalie: false, severite: null}
+        - {transaction_id: 5,  is_anomalie: false, severite: null}
+        - {transaction_id: 6,  is_anomalie: false, severite: null}
+        - {transaction_id: 7,  is_anomalie: false, severite: null}
+        - {transaction_id: 8,  is_anomalie: false, severite: null}
+        - {transaction_id: 9,  is_anomalie: false, severite: null}
+        - {transaction_id: 10, is_anomalie: false, severite: null}
+        - {transaction_id: 11, is_anomalie: false, severite: null}
+        - {transaction_id: 12, is_anomalie: true,  severite: high}
