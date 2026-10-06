@@ -409,8 +409,17 @@ Compléter les sections encore vides : "Choix Kimball vs Data Vault" (justifier 
 
 Remplacer le template par la stratégie réellement appliquée à l'étape 21 (dates de dépréciation réelles, consommateurs réels si connus, etc.).
 
-### Étape 25 — PR de démonstration ⏳ à faire par vous
-Nécessite un repo GitHub + les secrets (cf. étape 17).
+### Étape 25 — PR de démonstration ✅
+**Fait le 06/10** : PR #1 `feat/perf-scale-sprints-2-6` → `main`, **CI verte** (lint sqlfluff + Slim CI en build complet : 123 PASS, puis nettoyage du schéma `CI_1`).
+
+Trois bugs du workflow, invisibles tant qu'aucune vraie PR n'avait tourné, ont été corrigés en route :
+1. **Lint en exit 128** : clone superficiel, donc `git diff origin/main...HEAD` sans merge-base. Ajout de `fetch-depth: 0`.
+2. **`DBT_PROFILES_DIR: ./dbt` relatif** : les steps dbt tournent dans `./dbt`, le chemin pointait donc vers `dbt/dbt/`. Passé en chemin absolu (`${{ github.workspace }}/dbt`).
+3. **Récupération du manifest prod en 404** : `dbt_prod_deploy.yml` n'existe pas encore sur `main` au premier PR, et `if_no_artifact_found` ne couvre pas ce cas. Étape passée en `continue-on-error`, avec retour automatique au build complet.
+
+S'y ajoute un piège de lint : l'indentation attendue autour de `{% if is_incremental() %}` différait selon que la table existe (dev) ou non (CI). Le lint passait en local et échouait en CI. Corrigé dans `fct_virements` en isolant le filtre incrémental dans sa propre CTE.
+
+⚠️ Avant de merger : désactiver le workflow **dbt Prod Deploy** (Actions → dbt Prod Deploy → ⋯ → Disable workflow). Il n'a pas d'authentification par clé configurée et échouerait à chaque push sur `main`.
 
 Ouvrir une PR (branche `feat/...` selon la convention du README) regroupant un sous-ensemble représentatif des changements, vérifier que la CI passe entièrement au vert (lint + slim build + cleanup).
 
@@ -435,6 +444,6 @@ Répondre aux 4 questions du `MISSION.md` :
 | D — Sprint 4 historisation/FX | 14-16 | ✅ |
 | E — Sprint 5 CI/CD & orchestration | 17-18 | ✅ (partiel — secrets GitHub/test Airflow réel restent à faire par vous) |
 | F — Sprint 6 analytics/contracts/bonus | 19-22 | ✅ 19-21 exécutés et vérifiés (05/10) ; 22 (Elementary) non fait |
-| G — Clôture | 23-26 | ✅ docs + rapport ; ⏳ PR GitHub (25) |
+| G — Clôture | 23-26 | ✅ docs, rapport, PR #1 avec CI verte |
 
 Mettez à jour les ✅/⬜ au fil de l'eau — dites-moi à quelle étape vous voulez qu'on démarre et je vous accompagne dessus en détail.
