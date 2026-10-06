@@ -27,16 +27,20 @@
     )
 }}
 
-with virements as (
+with source as (
     select * from {{ ref('stg_virements') }}
+    {% if is_incremental() %}
     where
-        statut = 'execute'
-        {% if is_incremental() %}
-        and _loaded_at >= (
+        _loaded_at >= (
             select dateadd('day', -3, max(this_tbl._loaded_at))
             from {{ this }} as this_tbl
         )
-        {% endif %}
+    {% endif %}
+),
+
+virements as (
+    select * from source
+    where statut = 'execute'
 ),
 
 legs as (
