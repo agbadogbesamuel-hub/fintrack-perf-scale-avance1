@@ -8,7 +8,8 @@ on:
       - '.github/workflows/dbt_ci.yml'
 
 env:
-  DBT_PROFILES_DIR: ./dbt
+  # chemin absolu : les steps dbt tournent avec working-directory ./dbt
+  DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
   SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
   SNOWFLAKE_CI_USER: ${{ secrets.SNOWFLAKE_CI_USER }}
   SNOWFLAKE_CI_PASSWORD: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
@@ -19,8 +20,12 @@ jobs:
     name: Lint SQL (sqlfluff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+        with:
+          # historique complet : `git diff origin/<base>...HEAD` a besoin de
+          # la merge-base, absente d'un clone superficiel (exit code 128)
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install sqlfluff
@@ -64,11 +69,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
