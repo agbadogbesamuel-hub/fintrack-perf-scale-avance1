@@ -1,14 +1,27 @@
 name: dbt Prod Deploy
 
+# DÉSACTIVÉ (déclenchement manuel uniquement) — le compte Snowflake de la
+# mission n'a pas d'authentification par paire de clés pour la cible prod.
+# Avant de remettre le déclenchement automatique ci-dessous :
+#   1. créer la paire de clés et l'associer à l'utilisateur prod
+#      (ALTER USER ... SET RSA_PUBLIC_KEY = '...')
+#   2. ajouter les secrets SNOWFLAKE_PROD_USER, SNOWFLAKE_PRIVATE_KEY,
+#      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE
+#   3. générer dbt/profiles.yml (cible prod) dans le job, comme dans
+#      dbt_ci.yml — profiles.yml est gitignoré
+#
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - 'dbt/**'
+#       - '.github/workflows/dbt_prod_deploy.yml'
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'dbt/**'
-      - '.github/workflows/dbt_prod_deploy.yml'
+  workflow_dispatch:
 
 env:
-  DBT_PROFILES_DIR: ./dbt
+  # chemin absolu : les steps dbt tournent avec working-directory ./dbt
+  DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
   SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
   SNOWFLAKE_PROD_USER: ${{ secrets.SNOWFLAKE_PROD_USER }}
   SNOWFLAKE_PRIVATE_KEY_PATH: ${{ github.workspace }}/snowflake_prod_key.p8
@@ -19,9 +32,9 @@ jobs:
     name: Build prod + publish manifest artifact
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
